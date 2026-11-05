@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>xnet - Социальная сеть</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #1a1a1a; color: #e0e0e0; min-height: 100vh; }
+        
+        /* Навигация */
+        .navbar { display: flex; align-items: center; justify-content: space-between; padding: 0 40px; height: 64px; background-color: #222; border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 100; }
+        .logo { font-size: 24px; font-weight: 800; color: #fff; text-decoration: none; }
+        .logo span { color: #6c5ce7; }
+        .nav-links { display: flex; gap: 24px; height: 100%; }
+        .nav-links a { color: #999; text-decoration: none; font-size: 15px; display: flex; align-items: center; height: 100%; border-bottom: 2px solid transparent; cursor: pointer; }
+        .nav-links a:hover, .nav-links a.active { color: #fff; border-bottom-color: #6c5ce7; }
+        
+        .nav-right { display: flex; align-items: center; gap: 12px; }
+        .btn { background: #333; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: 0.2s;}
+        .btn:hover { background: #444; }
+        .btn-primary { background: #6c5ce7; }
+        .btn-primary:hover { background: #5b4bc4; }
+
+        /* Контент */
+        .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+        
+        /* Форма создания поста */
+        .create-post { background: #242424; padding: 20px; border-radius: 8px; border: 1px solid #333; margin-bottom: 24px; display: none; }
+        .create-post.active { display: block; }
+        .create-post input, .create-post textarea { width: 100%; background: #111; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 6px; margin-bottom: 10px; resize: vertical; }
+        .create-post textarea { min-height: 80px; }
+
+        /* Посты */
+        .post { background: #242424; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; overflow: hidden; }
+        .post-header { padding: 15px; display: flex; justify-content: space-between; font-size: 14px; color: #888; border-bottom: 1px solid #333; }
+        .post-author { color: #fff; font-weight: 600; }
+        .post-img { width: 100%; max-height: 400px; object-fit: cover; display: block; }
+        .post-content { padding: 15px; font-size: 15px; line-height: 1.5; }
+        .post-footer { padding: 10px 15px; display: flex; gap: 20px; border-top: 1px solid #333; background: #202020; }
+        .action-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 5px; }
+        .action-btn:hover { color: #fff; }
+        .action-btn.liked { color: #ff4757; }
+
+        /* Комментарии */
+        .comments-section { display: none; padding: 15px; background: #1e1e1e; border-top: 1px solid #333; }
+        .comments-section.active { display: block; }
+        .comment { margin-bottom: 10px; font-size: 14px; }
+        .comment-author { color: #6c5ce7; font-weight: 600; margin-right: 5px; }
+        .comment-input-wrapper { display: flex; gap: 10px; margin-top: 15px; }
+        .comment-input-wrapper input { flex-grow: 1; background: #111; border: 1px solid #444; color: #fff; padding: 8px; border-radius: 6px; }
+
+        /* Модалка авторизации */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: #242424; padding: 30px; border-radius: 8px; width: 100%; max-width: 400px; border: 1px solid #444; }
+        .modal h2 { margin-bottom: 20px; text-align: center; }
+        .modal input { width: 100%; background: #111; border: 1px solid #444; color: #fff; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+    <!-- Шапка -->
+    <header class="navbar">
+        <a href="#" class="logo">xnet<span>.id</span></a>
+        <nav class="nav-links">
+            <a class="active">Лента</a>
+            <a>Подписки</a>
+        </nav>
+        <div class="nav-right" id="authArea">
+            <!-- Кнопки отрисуются через JS -->
+        </div>
+    </header>
+
+    <!-- Основной контент -->
+    <main class="container">
+        
+        <!-- Форма создания поста (видна только авторизованным) -->
+        <div class="create-post" id="createPostBox">
+            <h3 style="margin-bottom: 15px;">Создать пост</h3>
+            <textarea id="postContent" placeholder="О чем думаете?"></textarea>
+            <input type="text" id="postImage" placeholder="Ссылка на картинку (необязательно)">
+            <button class="btn btn-primary" onclick="submitPost()">Опубликовать</button>
+        </div>
+
+        <!-- Лента -->
+        <div id="feed"></div>
+    </main>
+
+    <!-- Модалка Входа/Регистрации -->
+    <div class="modal-overlay" id="authModal">
+        <div class="modal">
+            <h2 id="modalTitle">Вход в xnet</h2>
+            <input type="text" id="authUsername" placeholder="Логин">
+            <input type="password" id="authPassword" placeholder="Пароль">
+            <button class="btn btn-primary" style="width: 100%; margin-bottom: 10px;" onclick="submitAuth()">Войти</button>
+            <button class="btn" style="width: 100%;" onclick="toggleAuthMode()">Нет аккаунта? Регистрация</button>
+        </div>
+    </div>
+
+    <script>
+        // --- СОСТОЯНИЕ ---
+        let token = localStorage.getItem('xnet_token') || null;
+        let currentUser = JSON.parse(localStorage.getItem('xnet_user')) || null;
+        let isRegisterMode = false;
+
+        // --- АВТОРИЗАЦИЯ ---
+        function updateNavbar() {
+            const authArea = document.getElementById('authArea');
+            const createPostBox = document.getElementById('createPostBox');
+            
+            if (token && currentUser) {
+                authArea.innerHTML = `
+                    <span style="color:#fff; font-weight:bold; margin-right:10px;">${currentUser.username}</span>
+                    <button class="btn" onclick="logout()">Выйти</button>
+                `;
+                createPostBox.classList.add('active');
+            } else {
+                authArea.innerHTML = `<button class="btn btn-primary" onclick="openModal()">Войти</button>`;
+                createPostBox.classList.remove('active');
+            }
+        }
+
+        function openModal() { document.getElementById('authModal').classList.add('active'); }
+        function closeModal() { document.getElementById('authModal').classList.remove('active'); }
+
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('modalTitle').innerText = isRegisterMode ? 'Регистрация' : 'Вход';
+        }
+
+        async function submitAuth() {
+            const username = document.getElementById('authUsername').value;
+            const password = document.getElementById('authPassword').value;
+            const endpoint = isRegisterMode ? '/api/register' : '/api/login';
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                
+                if (res.ok) {
+                    token = data.token;
+                    currentUser = data.user;
+                    localStorage.setItem('xnet_token', token);
+                    localStorage.setItem('xnet_user', JSON.stringify(currentUser));
+                    closeModal();
+                    updateNavbar();
+                    loadFeed();
+                } else {
+                    alert(data.error);
+                }
+            } catch (e) { alert('Ошибка сервера'); }
+        }
+
+        function logout() {
+            token = null; currentUser = null;
+            localStorage.removeItem('xnet_token');
+            localStorage.removeItem('xnet_user');
+            updateNavbar(); loadFeed();
+        }
+
+        // --- ПОСТЫ ---
+        async function loadFeed() {
+            const feed = document.getElementById('feed');
+            try {
+                const res = await fetch('/api/posts');
+                const posts = await res.json();
+                feed.innerHTML = '';
+
+                if (posts.length === 0) {
+                    feed.innerHTML = '<p style="text-align:center; color:#888;">Постов пока нет. Будьте первым!</p>';
+                    return;
+                }
+
+                posts.forEach(post => {
+                    const date = new Date(post.created_at).toLocaleString('ru-RU');
+                    const imgHtml = post.image_url ? `<img src="${post.image_url}" class="post-img" onerror="this.style.display='none'">` : '';
+                    
+                    feed.innerHTML += `
+                        <article class="post" id="post-${post.id}">
+                            <div class="post-header">
+                                <span class="post-author">@${post.username}</span>
+                                <span>${date}</span>
+                            </div>
+                            ${imgHtml}
+                            <div class="post-content">${post.content}</div>
+                            <div class="post-footer">
+                                <button class="action-btn" onclick="likePost(${post.id})">
+                                    ❤️ <span id="likes-${post.id}">${post.likes_count}</span>
+                                </button>
+                                <button class="action-btn" onclick="toggleComments(${post.id})">
+                                    💬 ${post.comments_count}
+                                </button>
+                            </div>
+                            <div class="comments-section" id="comments-${post.id}">
+                                <div class="comments-list" id="comments-list-${post.id}"></div>
+                                ${token ? `
+                                <div class="comment-input-wrapper">
+                                    <input type="text" id="comment-input-${post.id}" placeholder="Написать комментарий...">
+                                    <button class="btn btn-primary" onclick="addComment(${post.id})">Отправить</button>
+                                </div>` : '<p style="color:#888; font-size:12px; margin-top:10px;">Войдите, чтобы оставить комментарий.</p>'}
+                            </div>
+                        </article>
+                    `;
+                });
+            } catch (e) { feed.innerHTML = 'Ошибка загрузки ленты'; }
+        }
+
+        async function submitPost() {
+            const content = document.getElementById('postContent').value;
+            const image_url = document.getElementById('postImage').value;
+
+            if (!content) return alert('Напишите текст поста');
+
+            const res = await fetch('/api/posts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ content, image_url })
+            });
+
+            if (res.ok) {
+                document.getElementById('postContent').value = '';
+                document.getElementById('postImage').value = '';
+                loadFeed();
+            } else { alert('Ошибка при создании поста'); }
+        }
+
+        // --- ВЗАИМОДЕЙСТВИЕ ---
+        async function likePost(id) {
+            if (!token) return alert('Войдите, чтобы ставить лайки');
+            const res = await fetch(`/api/posts/${id}/like`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const likesEl = document.getElementById(`likes-${id}`);
+                const current = parseInt(likesEl.innerText);
+                likesEl.innerText = res.action === 'unliked' ? current - 1 : current + 1;
+            }
+        }
+
+        async function toggleComments(id) {
+            const section = document.getElementById(`comments-${id}`);
+            section.classList.toggle('active');
+            
+            if (section.classList.contains('active')) {
+                const res = await fetch(`/api/posts/${id}/comments`);
+                const comments = await res.json();
+                const list = document.getElementById(`comments-list-${id}`);
+                
+                list.innerHTML = comments.length ? '' : '<p style="color:#888; font-size:13px;">Комментариев нет.</p>';
+                
+                comments.forEach(c => {
+                    list.innerHTML += `<div class="comment"><span class="comment-author">@${c.username}</span> ${c.content}</div>`;
+                });
+            }
+        }
+
+        async function addComment(id) {
+            const input = document.getElementById(`comment-input-${id}`);
+            const content = input.value;
+            if (!content) return;
+
+            const res = await fetch(`/api/posts/${id}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ content })
+            });
+
+            if (res.ok) {
+                input.value = '';
+                toggleComments(id); // Обновить список
+                toggleComments(id); // Закрыть/Открыть для рефреша
+                loadFeed(); // Обновить счетчик на кнопке
+            }
+        }
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', () => {
+            updateNavbar();
+            loadFeed();
+        });
+    </script>
+</body>
+</html>
