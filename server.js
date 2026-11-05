@@ -8,7 +8,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 // ---------------------------------------------------------------------------
-// Конфигурация
+// Конфигурация1
 // ---------------------------------------------------------------------------
 const isProd = process.env.NODE_ENV === 'production';
 const PORT = process.env.PORT || 3000;
