@@ -7,20 +7,16 @@ require('dotenv').config();
 
 const app = express();
 
-// Подключение к Neon PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// Middleware
 app.use(cors());
-// ВАЖНО: Увеличиваем лимит до 50mb для загрузки картинок в Base64
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '50mb' })); // Увеличенный лимит для Base64 картинок
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 
-// --- Middleware для проверки токена ---
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -59,15 +55,7 @@ app.post('/api/login', async (req, res) => {
     const user = result.rows[0];
     if (await bcrypt.compare(password, user.password_hash)) {
       const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET);
-      res.json({ 
-        token, 
-        user: { 
-          id: user.id, 
-          username: user.username, 
-          bio: user.bio, 
-          avatar: user.avatar 
-        } 
-      });
+      res.json({ token, user: { id: user.id, username: user.username, bio: user.bio, avatar: user.avatar } });
     } else {
       res.status(400).json({ error: 'Неверный пароль' });
     }
@@ -80,12 +68,9 @@ app.post('/api/login', async (req, res) => {
 app.put('/api/profile', authenticateToken, async (req, res) => {
   const { username, bio, avatar } = req.body;
   try {
-    // Проверяем, не занято ли новое имя другим пользователем
     if (username !== req.user.username) {
       const checkName = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-      if (checkName.rows.length > 0) {
-        return res.status(400).json({ error: 'Это имя уже занято' });
-      }
+      if (checkName.rows.length > 0) return res.status(400).json({ error: 'Это имя уже занято' });
     }
 
     const result = await pool.query(
@@ -93,10 +78,8 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
       [username, bio, avatar, req.user.id]
     );
     
-    // Обновляем токен, так как изменился username
     const updatedUser = result.rows[0];
     const newToken = jwt.sign({ id: updatedUser.id, username: updatedUser.username }, process.env.JWT_SECRET);
-    
     res.json({ user: updatedUser, token: newToken });
   } catch (err) {
     res.status(500).json({ error: 'Ошибка при обновлении профиля' });
@@ -125,7 +108,7 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query(
       'INSERT INTO posts (user_id, content, image_url) VALUES ($1, $2, $3) RETURNING *',
-      [req.user.id, content, image_url] // image_url теперь принимает Base64 строку
+      [req.user.id, content, image_url]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -133,13 +116,21 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
   }
 });
 
-// Удаление поста (только своего)
+// УДАЛЕНИЕ ПОСТА (Админ или Владелец)
 app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      'DELETE FROM posts WHERE id = $1 AND user_id = $2 RETURNING *',
-      [req.params.id, req.user.id]
-    );
+    const isAdmin = req.user.username.toLowerCase() === 'colorsoft';
+    
+    let query = 'DELETE FROM posts WHERE id = $1 RETURNING *';
+    let params = [req.params.id];
+
+    // Если не админ, то удаляем только если это его пост
+    if (!isAdmin) {
+      query = 'DELETE FROM posts WHERE id = $1 AND user_id = $2 RETURNING *';
+      params = [req.params.id, req.user.id];
+    }
+
+    const result = await pool.query(query, params);
     if (result.rowCount === 0) return res.status(403).json({ error: 'Нет прав или пост не найден' });
     res.json({ success: true });
   } catch (err) {
@@ -154,7 +145,6 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
     await pool.query('INSERT INTO likes (user_id, post_id) VALUES ($1, $2)', [req.user.id, postId]);
     res.json({ success: true, action: 'liked' });
   } catch (err) {
-    // Если ошибка уникальности - удаляем лайк (дизлайк)
     await pool.query('DELETE FROM likes WHERE user_id = $1 AND post_id = $2', [req.user.id, postId]);
     res.json({ success: true, action: 'unliked' });
   }
@@ -163,8 +153,7 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
 app.get('/api/posts/:id/comments', async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT c.*, u.username 
-      FROM comments c JOIN users u ON c.user_id = u.id 
+      SELECT c.*, u.username FROM comments c JOIN users u ON c.user_id = u.id 
       WHERE c.post_id = $1 ORDER BY c.created_at ASC
     `, [req.params.id]);
     res.json(result.rows);
@@ -185,24 +174,6 @@ app.post('/api/posts/:id/comments', authenticateToken, async (req, res) => {
   }
 });
 
-// --- СОЗДАНИЕ ЧАТОВ (Только для ColorSoft) ---
-app.post('/api/chats', authenticateToken, async (req, res) => {
-  // Проверка прав: только пользователь ColorSoft может создавать чаты
-  if (req.user.username.toLowerCase() !== 'colorsoft') {
-    return res.status(403).json({ error: 'У вас нет прав на создание чатов' });
-  }
-
-  const { chatName } = req.body;
-  try {
-    // Здесь можно добавить логику сохранения чата в БД, если нужно
-    res.json({ success: true, message: `Чат "${chatName}" успешно создан!` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-// --- ЗАПУСК СЕРВЕРА ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Сервер xnet успешно запущен на порту ${PORT}`);
